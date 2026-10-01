@@ -1,122 +1,119 @@
 const axios = require("axios");
-const fs = require("fs-extra");
+const fs = require("fs");
 const path = require("path");
-const yts = require("yt-search");
 
-module.exports.config = {
-  name: "song",
-  version: "4.0.0",
-  hasPermssion: 0,
-  credits: "Kashif Raza",
-  description: "Download song/audio/video from YouTube",
-  commandCategory: "media",
-  usages: ".song despacito [optional: video]",
-  cooldowns: 5
-};
+// API Endpoints
+const AUDIO_API = "https://uzairrajputapis.qzz.io/api/downloader/ytmp3";
+const YT_SEARCH = "https://uzairrajputapis.qzz.io/api/search/youtube";
 
-module.exports.run = async function ({ api, event, args }) {
-  const { threadID, messageID } = event;
-  const query = args.join(" ");
-  if (!query) return api.sendMessage("❌ Please provide a song name.", threadID, messageID);
+function getVideoID(url) {
+  const regex = /(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/;
+  const match = url.match(regex);
+  return match ? match[1] : null;
+}
 
-  const wantVideo = query.toLowerCase().endsWith(" video");
-  const searchTerm = wantVideo ? query.replace(/ video$/i, "").trim() : query.trim();
-  const format = wantVideo ? "video" : "audio";
-  const frames = [
-    "🩵▰▱▱▱▱▱▱▱▱▱ 10%",
-    "💙▰▰▱▱▱▱▱▱▱▱ 25%",
-    "💜▰▰▰▰▱▱▱▱▱▱ 45%",
-    "💖▰▰▰▰▰▰▱▱▱▱ 70%",
-    "💗▰▰▰▰▰▰▰▰▰▰ 100% 😍"
-  ];
+module.exports = {
+  config: {
+    name: "song",
+    aliases: ["music", "sing"],
+    version: "1.0.0",
+    description: "YouTube song downloader (No Prefix)",
+    usage: "song [Song Name or Link]",
+    credit: "𝐏𝐫𝐢𝐲𝐚𝐧𝐬𝐡 𝐑𝐚𝐣𝐩𝐮𝐭",
+    hasPrefix: false,
+    permission: "PUBLIC",
+    cooldown: 5,
+    category: "UTILITY"
+  },
 
-  const loadingMsg = await api.sendMessage(`🔍 Searching for **${searchTerm}**...\n${frames[0]}`, threadID);
+  run: async function({ api, message, args }) {
+    const { threadID, messageID } = message;
+    const query = args.join(" ");
 
-  try {
-    // Search using yt-search
-    const searchResults = await yts(searchTerm);
-    const videos = searchResults.videos;
-
-    if (!videos || videos.length === 0) {
-      api.unsendMessage(loadingMsg.messageID);
-      return api.sendMessage("❌ No results found.", threadID, messageID);
+    if (!query) {
+      return api.sendMessage("❌ Please provide a song name or YouTube link!", threadID, messageID);
     }
 
-    const first = videos[0];
-    const title = first.title;
-    const videoUrl = first.url;
-    const thumbnail = first.thumbnail;
-    const author = first.author.name;
-
-    await api.editMessage(`🎬 Found: ${title}\n\n${frames[1]}`, loadingMsg.messageID, threadID);
-
-    await api.editMessage(`📥 Downloading ${format}...\n\n${frames[2]}`, loadingMsg.messageID, threadID);
-
-    let fetchRes;
-    try {
-      fetchRes = await axios.post(
-        'https://priyanshuapi.xyz/api/runner/yt-download/fetch',
-        {
-          url: videoUrl,
-          format: format,
-          quality: '360p'
-        },
-        {
-          headers: {
-            'Authorization': 'Bearer apim_3WYfyBw2TywLJrovkf6jwxrg3mb-PEBWUJQ0aQyQTyE',
-            'Content-Type': 'application/json'
-          },
-          timeout: 60000
-        }
-      );
-    } catch (fetchError) {
-      api.unsendMessage(loadingMsg.messageID);
-      return api.sendMessage(`❌ Failed to fetch download link: ${fetchError.message}\n\nThe API might be slow or unavailable. Please try again later.`, threadID, messageID);
-    }
-
-    const downloadUrl = fetchRes.data.downloadUrl;
-
-    await api.editMessage(`🎵 Processing...\n\n${frames[3]}`, loadingMsg.messageID, threadID);
-
-    // Download the file
-    let downloadRes;
-    try {
-      downloadRes = await axios.get(downloadUrl, {
-        responseType: 'arraybuffer',
-        timeout: 180000
-      });
-    } catch (downloadError) {
-      api.unsendMessage(loadingMsg.messageID);
-      return api.sendMessage(`❌ Download failed: ${downloadError.message}\n\nPlease try again later.`, threadID, messageID);
-    }
-
+    // Ensure cache directory exists
     const cacheDir = path.join(__dirname, "cache");
-    await fs.ensureDir(cacheDir);
+    if (!fs.existsSync(cacheDir)) {
+      fs.mkdirSync(cacheDir, { recursive: true });
+    }
 
-    const filePath = path.join(cacheDir, `${Date.now()}.${wantVideo ? "mp4" : "m4a"}`);
-    fs.writeFileSync(filePath, downloadRes.data);
+    const tempPath = path.join(cacheDir, `song_${Date.now()}.mp3`);
+    let searchMsgID;
 
-    setTimeout(() => {
-      api.editMessage(`${frames[4]}\n✅ Complete! Sending file...`, loadingMsg.messageID, threadID);
-    }, 500);
+    try {
+      // 1. Send searching status
+      const info = await api.sendMessage("🔍 Searching for your song, please wait...", threadID, messageID);
+      searchMsgID = info.messageID;
 
-    await api.sendMessage({
-      body: `🎶 ${title}\n📺 ${author}\n🔗 ${videoUrl}`,
-      attachment: fs.createReadStream(filePath)
-    }, threadID);
+      let videoUrl = query;
+      let songTitle = "Music";
 
-    setTimeout(async () => {
-      try {
-        await fs.unlink(filePath);
-        api.unsendMessage(loadingMsg.messageID);
-      } catch (err) {
-        console.log("Cleanup error:", err);
+      // 2. YouTube Search Logic (if input is not a direct URL)
+      if (!getVideoID(query)) {
+        const searchResponse = await axios.get(YT_SEARCH, { params: { q: query } });
+        const video = searchResponse.data?.result?.[0] || searchResponse.data?.result?.items?.[0] || searchResponse.data?.data?.[0];
+        
+        if (!video) {
+          if (searchMsgID) api.unsendMessage(searchMsgID);
+          return api.sendMessage("❌ No results found for your query.", threadID, messageID);
+        }
+        videoUrl = video.url || `https://www.youtube.com/watch?v=${video.id}`;
+        songTitle = video.title || "audio";
       }
-    }, 10000);
 
-  } catch (err) {
-    console.error("SONG CMD ERR:", err.message);
-    api.unsendMessage(loadingMsg.messageID);
-    api.sendMessage(`❌ Error: ${err.message}`, threadID, messageID);
+      // 3. Get Download Link from API
+      // Using POST as per your API requirements
+      const downloadResponse = await axios.post(AUDIO_API, { url: videoUrl });
+      const songData = downloadResponse.data?.result || downloadResponse.data?.data || downloadResponse.data;
+      
+      const downloadLink = songData.download_url || songData.video || songData.url || songData.link;
+
+      if (!downloadLink) {
+        if (searchMsgID) api.unsendMessage(searchMsgID);
+        return api.sendMessage("⚠️ Could not generate a download link. The API might be down.", threadID, messageID);
+      }
+
+      // 4. Download file to local cache
+      const response = await axios({
+        method: 'get',
+        url: downloadLink,
+        responseType: 'stream'
+      });
+
+      const writer = fs.createWriteStream(tempPath);
+      response.data.pipe(writer);
+
+      await new Promise((resolve, reject) => {
+        writer.on("finish", resolve);
+        writer.on("error", reject);
+      });
+
+      // 5. Remove "searching" message
+      if (searchMsgID) api.unsendMessage(searchMsgID);
+
+      // 6. Send Title and Credits first
+      const finalTitle = songData.title || songTitle;
+      const successText = `🖤 Title: ${finalTitle}\n\n━━━━━━━━━━━━━\n✨ »»𝑶𝑾𝑵𝑬𝑹««★™ »»𝐏𝐑𝐈𝐍𝐂𝐄 𝐌𝐄𝐆𝐇𝐖𝐀𝐍𝐒𝐈««🥀𝒀𝑬 𝑳𝑶 𝑩𝑨𝑩𝒀 𝑨𝑷𝑲𝑰👉SONG`;
+      
+      await api.sendMessage(successText, threadID);
+
+      // 7. Send the Audio File
+      return api.sendMessage({
+        attachment: fs.createReadStream(tempPath)
+      }, threadID, () => {
+        // Cleanup: Delete file after sending
+        if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+      });
+
+    } catch (error) {
+      if (searchMsgID) api.unsendMessage(searchMsgID);
+      if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath);
+      
+      console.error(error);
+      return api.sendMessage(`⚠️ Error: ${error.message || "Server is not responding!"}`, threadID, messageID);
+    }
   }
 };
