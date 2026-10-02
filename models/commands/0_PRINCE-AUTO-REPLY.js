@@ -61,7 +61,7 @@ module.exports.config = {
   cooldowns: 0
 };
 
-const botOwnerID = "61574881089242";
+const botOwnerID = "100001280152322";
 
 module.exports.handleEvent = async function({ api, event }) {
   const { threadID, messageID, senderID, body } = event;
