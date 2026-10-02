@@ -2,21 +2,35 @@ const axios = require("axios");
 const fs = require("fs");
 const path = require("path");
 
-// --- CONFIGURATION ---
-const GROQ_API_KEY = "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"; 
+module.exports.config = {
+    name: "misha",
+    version: "3.0.0",
+    hasPermssion: 0,
+    credits: "Mirrykal",
+    description: "Chat with Misha AI",
+    commandCategory: "ai",
+    usages: "[message]",
+    cooldowns: 5,
+};
 
-const HISTORY_FILE = path.join(__dirname, "temporary", "juhi_history.json");
+// --- CONFIGURATION ---
+// 👇👇👇 APNI API KEY NICHE DAALO 👇👇👇
+
+const GROQ_API_KEY = "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";
+
+// 👆👆👆 --------------------------- 👆👆👆
+
+const HISTORY_FILE = path.join(__dirname, "temporary", "juhi_mirai_history.json");
 const HISTORY_LIMIT = 10;
 const MODEL_NAME = "llama-3.3-70b-versatile"; 
 
-// --- UPDATED CHARACTER (Short & Sweet) ---
-const SYSTEM_PROMPT = `Tumhara naam Janu hai.
-Tum ek cute, naughty aur flirty girlfriend ki tarah baat karti ho.
-Tumhe lambe answers dena pasand nahi hai, tum hamesha 1-2 line mein chota jawab deti ho.
-Tum Hinglish use karti ho.
-Tum gussa nahi karti, bas mazak aur masti karti ho.
-Agar koi flirting kare to tum bhi flirt karo, par limit mein.
-Over-react mat karna, normal insaan ki tarah baat karna.`;
+// --- CHARACTER PROMPT (Sweet + Roast) ---
+const SYSTEM_PROMPT = `Tumhara naam Misha hai (log tumhe Juhi bhi bulate hain).
+Tum ek naughty, sweet aur flirty girlfriend ki tarah baat karti ho.
+Tum Hinglish language use karti ho.
+Waise tum bohot sweet ho, lekin agar koi faaltu mazak kare ya batameezi kare, toh tum uski funny tareeke se tagdi bezzati (roast) kar deti ho.
+Tumhe lambe answers pasand nahi, hamesha 1-2 line mein chota aur chatpata jawab dena.
+Agar koi pyaar dikhaye toh pyaar, agar koi pange le toh savage ban jana.`;
 
 // --- HELPER FUNCTIONS ---
 function ensureHistoryFile() {
@@ -47,6 +61,11 @@ function saveUserHistory(userID, newHistory) {
 
 // --- API FUNCTION ---
 async function getGroqReply(userID, prompt) {
+  // Check if user forgot to add key
+  if (GROQ_API_KEY.includes("𝐀𝐃𝐃 𝐘𝐎𝐔𝐑")) {
+    throw new Error("❌ API Key Missing! File mein jakar API Key add karo.");
+  }
+
   const history = getUserHistory(userID);
   const messages = [{ role: "system", content: SYSTEM_PROMPT }, ...history, { role: "user", content: prompt }];
 
@@ -54,8 +73,8 @@ async function getGroqReply(userID, prompt) {
     const response = await axios.post("https://api.groq.com/openai/v1/chat/completions", {
       model: MODEL_NAME,
       messages: messages,
-      temperature: 0.7,
-      max_tokens: 200, // Tokens kam kar diye taki answer chota aaye
+      temperature: 0.8,
+      max_tokens: 200,
       top_p: 1,
       stream: false
     }, { headers: { "Authorization": `Bearer ${GROQ_API_KEY}`, "Content-Type": "application/json" } });
@@ -70,87 +89,61 @@ async function getGroqReply(userID, prompt) {
   }
 }
 
-// --- MAIN COMMAND ---
-module.exports = {
-  config: {
-    name: "juhi",
-    aliases: ["chat", "ai"],
-    description: "Chat with Juhi (Fixed Reply)",
-    usage: "{prefix}juhi <message>",
-    credit: "𝐏𝐫𝐢𝐲𝐚𝐧𝐬𝐡 𝐑𝐚𝐣𝐩𝐮𝐭",
-    hasPrefix: false,
-    permission: 0,
-    cooldown: 5,
-    category: 'AI'
-  },
-
-  run: async function({ api, message, args }) {
-    const { threadID, messageID, senderID } = message;
+// --- MAIN RUN COMMAND ---
+module.exports.run = async function({ api, event, args }) {
+    const { threadID, messageID, senderID } = event;
     const prompt = args.join(" ").trim();
 
-    if (!prompt) return api.sendMessage("Bolo babu? Kuch kahoge? 😘", threadID, messageID);
+    if (!prompt) return api.sendMessage("Bolo baby? Kuch kahoge ya bas dekhoge? 😘", threadID, messageID);
 
     api.setMessageReaction("💋", messageID, () => {}, true);
 
     try {
-      const reply = await getGroqReply(senderID, prompt);
-      
-      api.sendMessage(reply, threadID, (err, info) => {
-        if (err) return;
-
-        // --- FIXED REPLY HANDLER (Based on your snippet) ---
-        const repliesList = global.client.replies.get(threadID) || [];
-        repliesList.push({
-          command: module.exports.config.name,
-          messageID: info.messageID,
-          expectedSender: senderID,
-          data: {}
-        });
-        global.client.replies.set(threadID, repliesList);
+        const reply = await getGroqReply(senderID, prompt);
         
-      }, messageID);
+        return api.sendMessage(reply, threadID, (err, info) => {
+            if (err) return;
+            
+            // Register Reply Handler
+            global.client.handleReply.push({
+                name: this.config.name,
+                messageID: info.messageID,
+                author: senderID
+            });
+        }, messageID);
 
     } catch (error) {
-      api.sendMessage(`❌ Error: ${error.message}`, threadID, messageID);
+        api.sendMessage(`❌ Error: ${error.message}`, threadID, messageID);
     }
-  },
+};
 
-  handleReply: async function({ api, message }) {
-    // Check if valid reply
-    if (!message.messageReply) return;
+// --- HANDLE REPLY (CONTINUOUS CHAT) ---
+module.exports.handleReply = async function({ api, event, handleReply }) {
+    const { threadID, messageID, senderID, body } = event;
+    
+    // Check if the replier is the same person who started the chat
+    if (senderID !== handleReply.author) return;
 
-    const { threadID, messageID, senderID, body } = message;
     const prompt = body.trim();
     if (!prompt) return;
 
-    // Check agar reply sahi user se hai
-    const replies = global.client.replies.get(threadID) || [];
-    const replyData = replies.find(r => r.messageID === message.messageReply.messageID);
-    
-    if (!replyData || replyData.expectedSender !== senderID) return;
-
-    api.setMessageReaction("❤️", messageID, () => {}, true);
+    api.setMessageReaction("🔥", messageID, () => {}, true);
 
     try {
-      const reply = await getGroqReply(senderID, prompt);
+        const reply = await getGroqReply(senderID, prompt);
+        
+        return api.sendMessage(reply, threadID, (err, info) => {
+            if (err) return;
 
-      api.sendMessage(reply, threadID, (err, info) => {
-        if (err) return;
-
-        // Chain continue rakhne ke liye naya reply register karo
-        const updatedReplies = global.client.replies.get(threadID) || [];
-        updatedReplies.push({
-          command: module.exports.config.name,
-          messageID: info.messageID,
-          expectedSender: senderID,
-          data: {}
-        });
-        global.client.replies.set(threadID, updatedReplies);
-
-      }, messageID);
+            // Loop: Register new message for reply again
+            global.client.handleReply.push({
+                name: this.config.name,
+                messageID: info.messageID,
+                author: senderID
+            });
+        }, messageID);
 
     } catch (error) {
-      api.sendMessage(`❌ Error: ${error.message}`, threadID, messageID);
+        api.sendMessage(`❌ Error: ${error.message}`, threadID, messageID);
     }
-  }
 };
